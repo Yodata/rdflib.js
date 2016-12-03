@@ -19904,9 +19904,9 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 
 /**
  *
- * Project: rdflib.js, originally part of Tabulator project
+ * Project: rdflib.js
  *
- * File: web.js
+ * File: fetcher.js
  *
  * Description: contains functions for requesting/fetching/retracting
  *  This implements quite a lot of the web architecture.
@@ -20037,7 +20037,9 @@ var Fetcher = function Fetcher(store, timeout, async) {
     return 'RDFXMLHandler';
   };
   Fetcher.RDFXMLHandler.register = function (sf) {
-    sf.mediatypes['application/rdf+xml'] = {};
+    sf.mediatypes['application/rdf+xml'] = {
+      'q': 0.9
+    };
   };
   Fetcher.RDFXMLHandler.pattern = new RegExp('application/rdf\\+xml');
 
@@ -20469,6 +20471,16 @@ var Fetcher = function Fetcher(store, timeout, async) {
 
   // Returns promise of XHR
   //
+  //  Writes back to the web what we have in the store for this uri
+  this.putBack = function (uri, options) {
+    uri = uri.uri || uri; // Accept object or string
+    var doc = $rdf.sym(uri).doc(); // strip off #
+    options.data = $rdf.serialize(doc, this.store, doc.uri, options.contentType || 'text/turtle');
+    return this.webOperation('PUT', uri, options);
+  };
+
+  // Returns promise of XHR
+  //
   this.webOperation = function (method, uri, options) {
     uri = uri.uri || uri;options = options || {};
     uri = this.proxyIfNecessary(uri);
@@ -20733,7 +20745,13 @@ var Fetcher = function Fetcher(store, timeout, async) {
       xhr.headers = Util.getHTTPHeaders(xhr);
       for (var h in xhr.headers) {
         // trim below for Safari - adds a CR!
-        kb.add(response, ns.httph(h.toLowerCase()), xhr.headers[h].trim(), response);
+        var value = xhr.headers[h].trim();
+        var h2 = h.toLowerCase();
+        kb.add(response, ns.httph(h2), value, response);
+        if (h2 === 'content-type') {
+          // Convert to RDF type
+          kb.add(xhr.resource, ns.rdf('type'), $rdf.Util.mediaTypeClass(value), response);
+        }
       }
     }
     return response;
@@ -20914,8 +20932,8 @@ var Fetcher = function Fetcher(store, timeout, async) {
                 }
               }
             }
-
-            xhr.status = 999; //
+            xhr.CORS_status = 999;
+            // xhr.status = 999     forbidden - read-only
           }
         } // mashu
       }; // function of event
@@ -20944,7 +20962,7 @@ var Fetcher = function Fetcher(store, timeout, async) {
               // retry is could be credentials flag CORS issue
               return;
             }
-            xhr.status = 900; // unknown masked error
+            xhr.CORS_status = 900; // unknown masked error
             return;
           }
           if (xhr.status >= 400) {
@@ -22301,6 +22319,11 @@ var IndexedFormula = function (_Formula) {
           done = done || actions[i](this, subj, pred, obj, why);
         }
       }
+      if (this.holds(subj, pred, obj, why)) {
+        // Takes time but saves duplicates
+        console.log('rdflib: Ignoring dup! {' + subj + ' ' + pred + ' ' + obj + ' ' + why + '}');
+        return null; // @@better to return self in all cases?
+      }
       // If we are tracking provenance, every thing should be loaded into the store
       // if (done) return new Statement(subj, pred, obj, why);
       // Don't put it in the store
@@ -22343,6 +22366,12 @@ var IndexedFormula = function (_Formula) {
         return st.object;
       }
       return void 0;
+    }
+  }, {
+    key: 'anyValue',
+    value: function anyValue(s, p, o, g) {
+      var y = this.any(s, p, o, g);
+      return y ? y.value : void 0;
     }
   }, {
     key: 'anyStatementMatching',
@@ -24707,6 +24736,9 @@ var NamedNode = function (_Node) {
     var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(NamedNode).call(this));
 
     _this.termType = NamedNode.termType;
+    if (iri.indexOf(':') < 0) {
+      console.log('Warning: NamedNode URI must be absolute. Relative URIs will fail in future versions');
+    }
     _this.value = iri;
     return _this;
   }
@@ -27716,17 +27748,24 @@ var Serializer = function () {
     __Serializer.prototype.termToN3 = termToN3;
     termToN3 = termToN3.bind(this);
 
+    var self = this;
+
+    function explicitURI(uri) {
+      if (self.flags.indexOf('r') < 0 && this.base) uri = Uri.refTo(self.base, uri);else if (self.flags.indexOf('u') >= 0) uri = backslashUify(uri);else uri = hexify(uri);
+      return '<' + uri + '>';
+    }
+
     function prefixDirectives() {
       var str = '';
       if (this.defaultNamespace) str += '@prefix : <' + this.defaultNamespace + '>.\n';
       for (var ns in this.prefixes) {
         if (!this.prefixes.hasOwnProperty(ns)) continue;
         if (!this.namespacesUsed[ns]) continue;
-        str += '@prefix ' + this.prefixes[ns] + ': <' + Uri.refTo(this.base, ns) + '>.\n';
+        str += '@prefix ' + this.prefixes[ns] + ': ' + explicitURI(ns) + '.\n';
       }
       return str + '\n';
     }
-    prefixDirectives = prefixDirectives.bind(this);
+    var prefixDirectives = prefixDirectives.bind(this);
 
     // Body of statementsToN3:
 
@@ -27859,8 +27898,7 @@ var Serializer = function () {
         // Fall though if can't do qname
       }
     }
-    if (this.flags.indexOf('r') < 0 && this.base) uri = Uri.refTo(this.base, uri);else if (this.flags.indexOf('u') >= 0) uri = backslashUify(uri);else uri = hexify(uri);
-    return '<' + uri + '>';
+    return explicitURI(uri);
   };
 
   // String escaping utilities
@@ -28804,9 +28842,6 @@ var UpdateManager = function () {
       // The store must also/already have a fetcher
       new Fetcher(store);
     }
-    if (store.updater) {
-      throw new Error("You can't have two UpdateManagers for the same store");
-    }
     store.updater = this;
     this.ifps = {};
     this.fps = {};
@@ -29167,7 +29202,7 @@ var UpdateManager = function () {
     } else {
       if (control.downstreamAction) {
         if (control.downstreamAction === action) {
-          return this;
+          return;
         } else {
           throw new Error("Can't wait for > 1 differnt downstream actions");
         }
@@ -29317,15 +29352,15 @@ var UpdateManager = function () {
       };
       socket.onmessage = function (msg) {
         if (msg.data && msg.data.slice(0, 3) === 'pub') {
-          if (control.upstreamCount) {
+          if ('upstreamCount' in control) {
             control.upstreamCount -= 1;
             if (control.upstreamCount >= 0) {
-              console.log('just an echo');
+              console.log('just an echo: ' + control.upstreamCount);
               return; // Just an echo
             }
           }
+          console.log('Assume a real downstream change: ' + control.upstreamCount + ' -> 0');
           control.upstreamCount = 0;
-          console.log('Assume a real downstream change');
           self.requestDownstreamAction(doc, theHandler);
         }
       };
@@ -29338,8 +29373,9 @@ var UpdateManager = function () {
   // This high-level function updates the local store iff the web is changed successfully.
   //
   //  - deletions, insertions may be undefined or single statements or lists or formulae.
+  //      (may contain bnodes which can be indirectly identified by a where clause)
   //
-  //  - callback is called as callback(uri, success, errorbody)
+  //  - callback is called as callback(uri, success, errorbody, xhr)
   //
   sparql.prototype.update = function (deletions, insertions, callback) {
     try {
@@ -29427,8 +29463,9 @@ var UpdateManager = function () {
         }
         // Track pending upstream patches until they have fnished their callback
         control.pendingUpstream = control.pendingUpstream ? control.pendingUpstream + 1 : 1;
-        if (typeof control.upstreamCount !== 'undefined') {
+        if ('upstreamCount' in control) {
           control.upstreamCount += 1; // count changes we originated ourselves
+          console.log('upstream count up to : ' + control.upstreamCount);
         }
 
         this._fire(doc.uri, query, function (uri, success, body, xhr) {
@@ -30133,6 +30170,10 @@ module.exports.uri = require('./uri'); // TODO: Remove this mixed usage
 // module.exports.variablesIn = variablesIn
 module.exports.XMLHTTPFactory = xhr;
 module.exports.log = log;
+
+module.exports.mediaTypeClass = function (mediaType) {
+  return $rdf.sym('http://www.w3.org/ns/iana/media-types/' + mediaType + '#Resource');
+};
 
 /**
  * Loads ontologies of the data we load (this is the callback from the kb to

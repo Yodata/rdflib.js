@@ -1,8 +1,8 @@
 /**
  *
- * Project: rdflib.js, originally part of Tabulator project
+ * Project: rdflib.js
  *
- * File: web.js
+ * File: fetcher.js
  *
  * Description: contains functions for requesting/fetching/retracting
  *  This implements quite a lot of the web architecture.
@@ -132,7 +132,9 @@ var Fetcher = function Fetcher (store, timeout, async) {
     return 'RDFXMLHandler'
   }
   Fetcher.RDFXMLHandler.register = function (sf) {
-    sf.mediatypes['application/rdf+xml'] = {}
+    sf.mediatypes['application/rdf+xml'] = {
+      'q': 0.9
+    }
   }
   Fetcher.RDFXMLHandler.pattern = new RegExp('application/rdf\\+xml')
 
@@ -579,6 +581,16 @@ var Fetcher = function Fetcher (store, timeout, async) {
 
   // Returns promise of XHR
   //
+  //  Writes back to the web what we have in the store for this uri
+  this.putBack = function (uri, options) {
+    uri = uri.uri || uri // Accept object or string
+    var doc = $rdf.sym(uri).doc() // strip off #
+    options.data = $rdf.serialize(doc, this.store, doc.uri, options.contentType ||  'text/turtle')
+    return this.webOperation('PUT', uri, options)
+  }
+
+  // Returns promise of XHR
+  //
   this.webOperation = function (method, uri, options) {
     uri = uri.uri || uri; options = options || {}
     uri = this.proxyIfNecessary(uri)
@@ -846,7 +858,12 @@ var Fetcher = function Fetcher (store, timeout, async) {
     if (Uri.protocol(xhr.resource.uri) === 'http' || Uri.protocol(xhr.resource.uri) === 'https') {
       xhr.headers = Util.getHTTPHeaders(xhr)
       for (var h in xhr.headers) { // trim below for Safari - adds a CR!
-        kb.add(response, ns.httph(h.toLowerCase()), xhr.headers[h].trim(), response)
+        var value = xhr.headers[h].trim()
+        var h2 = h.toLowerCase()
+        kb.add(response, ns.httph(h2), value, response)
+        if (h2 === 'content-type'){ // Convert to RDF type
+          kb.add(xhr.resource, ns.rdf('type'), $rdf.Util.mediaTypeClass(value), response)
+        }
       }
     }
     return response
