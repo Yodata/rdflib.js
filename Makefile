@@ -42,13 +42,7 @@ clean:
 	rm -f lib/*
 
 cleantest:
-	rm tests/serialize/,t1.xml
-	rm tests/serialize/,t2.xml
-	rm tests/serialize/,t3.xml
-	rm tests/serialize/,t4.ttl
-	rm tests/serialize/,t5.ttl
-	rm tests/serialize/,t6.n3
-	rm tests/serialize/,t7.nt
+	rm tests/serialize/,*
 
 status:
 	@pwd
@@ -61,8 +55,6 @@ writable:
 	@sed -i -re 's/git:\/\/github.com\//git@github.com:/' .git/config
 
 .PHONY: test
-test:
-	@nodeunit tests/*.js
+test:	lib
 	make -C tests/serialize
-	tape tests/unit/*.js
 	make cleantest

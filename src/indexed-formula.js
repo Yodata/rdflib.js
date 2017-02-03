@@ -61,11 +61,12 @@ function handleRDFType (formula, subj, pred, obj, why) {
   return done // statement given is not needed if true
 }
 
-class IndexedFormula extends Formula {
+export default class IndexedFormula extends Formula { // IN future - allow pass array of statements to constructor
   constructor (features) {
     super()
-    this.statements = [] // As in Formula
-    this.optional = []
+    // this.statements = [] // As in Formula NO don't overwrite inherited
+    // this.optional = []
+
     this.propertyActions = [] // Array of functions to call when getting statement with {s X o}
     // maps <uri> to [f(F,s,p,o),...]
     this.classActions = [] // Array of functions to call when adding { s type X }
@@ -91,16 +92,43 @@ class IndexedFormula extends Formula {
     this.initPropertyActions(this.features)
   }
 
+  substitute (bindings) {
+    var statementsCopy = this.statements.map(function (ea) {
+      return ea.substitute(bindings)
+    })
+    // console.log('IndexedFormula subs statemnts:' + statementsCopy)
+    var y = new IndexedFormula()
+    y.add(statementsCopy)
+    // console.log('indexed-form subs formula:' + y)
+    return y
+  }
+
   applyPatch (patch, target, patchCallback) { // patchCallback(err)
-    const Query = require('./query')
+    const Query = require('./query').Query
     var targetKB = this
     var ds
+    var binding = null
+
+    // /////////// Debug strings
+    /*
+    var bindingDebug = function (b) {
+      var str = ''
+      var v
+      for (v in b) {
+        if (b.hasOwnProperty(v)) {
+          str += '    ' + v + ' -> ' + b[v]
+        }
+      }
+      return str
+    }
+*/
     var doPatch = function (onDonePatch) {
-      // log.info("doPatch ...")
       if (patch['delete']) {
-        // log.info("doPatch delete "+patch['delete'])
         ds = patch['delete']
-        if (bindings) ds = ds.substitute(bindings)
+        // console.log(bindingDebug(binding))
+        // console.log('ds before substitute: ' + ds)
+        if (binding) ds = ds.substitute(binding)
+        // console.log('applyPatch: delete: ' + ds)
         ds = ds.statements
         var bad = []
         var ds2 = ds.map(function (st) { // Find the actual statemnts in the store
@@ -115,7 +143,9 @@ class IndexedFormula extends Formula {
           }
         })
         if (bad.length) {
-          return patchCallback("Couldn't find to delete: " + bad[0])
+          // console.log('Could not find to delete ' + bad.length + 'statements')
+          // console.log('despite ' + targetKB.statementsMatching(bad[0].subject, bad[0].predicate)[0])
+          return patchCallback('Could not find to delete: ' + bad.join('\n or '))
         }
         ds2.map(function (st) {
           targetKB.remove(st)
@@ -124,7 +154,7 @@ class IndexedFormula extends Formula {
       if (patch['insert']) {
         // log.info("doPatch insert "+patch['insert'])
         ds = patch['insert']
-        if (bindings) ds = ds.substitute(bindings)
+        if (binding) ds = ds.substitute(binding)
         ds = ds.statements
         ds.map(function (st) {
           st.why = target
@@ -133,7 +163,6 @@ class IndexedFormula extends Formula {
       }
       onDonePatch()
     }
-    var bindings = null
     if (patch.where) {
       // log.info("Processing WHERE: " + patch.where + '\n')
       var query = new Query('patch')
@@ -143,10 +172,10 @@ class IndexedFormula extends Formula {
       })
 
       var bindingsFound = []
-      // log.info("Processing WHERE - launching query: " + query.pat)
 
       targetKB.query(query, function onBinding (binding) {
         bindingsFound.push(binding)
+        // console.log('   got a binding: ' + bindingDebug(binding))
       },
         targetKB.fetcher,
         function onDone () {
@@ -156,7 +185,7 @@ class IndexedFormula extends Formula {
           if (bindingsFound.length > 1) {
             return patchCallback('Patch ambiguous. No patch done.')
           }
-          bindings = bindingsFound[0]
+          binding = bindingsFound[0]
           doPatch(patchCallback)
         })
     } else {
@@ -244,12 +273,12 @@ class IndexedFormula extends Formula {
         done = done || actions[i](this, subj, pred, obj, why)
       }
     }
-    if (this.holds(subj, pred, obj, why)){ // Takes time but saves duplicates
-      console.log('rdflib: Ignoring dup! {' + subj + ' ' + pred+ ' '  + obj+ ' '  + why+ '}')
+    if (this.holds(subj, pred, obj, why)) { // Takes time but saves duplicates
+      // console.log('rdflib: Ignoring dup! {' + subj + ' ' + pred + ' ' + obj + ' ' + why + '}')
       return null // @@better to return self in all cases?
     }
     // If we are tracking provenance, every thing should be loaded into the store
-    // if (done) return new Statement(subj, pred, obj, why);
+    // if (done) return new Statement(subj, pred, obj, why)
     // Don't put it in the store
     // still return this statement for owl:sameAs input
     var hash = [ this.canon(subj).hashString(), predHash,
@@ -288,7 +317,7 @@ class IndexedFormula extends Formula {
     return void 0
   }
 
-  anyValue(s, p, o, g) {
+  anyValue (s, p, o, g) {
     var y = this.any(s, p, o, g)
     return y ? y.value : void 0
   }
@@ -381,7 +410,7 @@ class IndexedFormula extends Formula {
     if (ArrayIndexOf(flags, 'two-direction') !== -1) {
       statList.concat(this.statementsMatching(undefined, undefined, template))
     }
-    for (var i = 0;i < statList.length;i++) {
+    for (var i = 0; i < statList.length; i++) {
       var st = statList[i]
       switch (st.object.termType) {
         case 'NamedNode':
@@ -464,8 +493,8 @@ class IndexedFormula extends Formula {
   mentionsURI (uri) {
     var hash = '<' + uri + '>'
     return (!!this.subjectIndex[hash] ||
-      !!this.objectIndex[hash] ||
-      !!this.predicateIndex[hash])
+    !!this.objectIndex[hash] ||
+    !!this.predicateIndex[hash])
   }
 
   // Existentials are BNodes - something exists without naming
@@ -509,7 +538,7 @@ class IndexedFormula extends Formula {
    * (Note: Slow iff a lot of them -- could be O(log(k)) )
    */
   nextSymbol (doc) {
-    for (var i = 0;;i++) {
+    for (var i = 0; ;i++) {
       var uri = doc.uri + '#n' + i
       if (!this.mentionsURI(uri)) return this.sym(uri)
     }
@@ -657,7 +686,7 @@ class IndexedFormula extends Formula {
   /**
    * Return all equivalent URIs by which this is known
    */
-  allAliases (x){
+  allAliases (x) {
     var a = this.aliases[this.canon(x).hashString()] || []
     a.push(this.canon(x))
     return a
@@ -786,5 +815,4 @@ class IndexedFormula extends Formula {
   }
 }
 
-module.exports = IndexedFormula
-module.exports.handleRDFType = handleRDFType
+IndexedFormula.handleRDFType = handleRDFType

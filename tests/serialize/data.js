@@ -5,7 +5,7 @@
 // See http://www.w3.org/TR/rdfa-syntax/  etc
 //
 
-$rdf = require('../../src')
+const $rdf = require('../../lib')
 var fs = require('fs')
 
 var kb = $rdf.graph()
@@ -14,7 +14,7 @@ var fetcher = $rdf.fetcher(kb)
 var contentType = 'text/turtle'
 var base = 'file://' + process.cwd() + '/'
 var uri
-var targetDocument
+var targetDocument = $rdf.sym(base + 'stdin') // defaul URI of test data
 
 var check = function (ok, message, status) {
   if (!ok) {
@@ -63,6 +63,7 @@ var doNext = function (remaining) {
     var command = remaining.shift().split('=')
     var left = command[0],
       right = command[1]
+    let doc
     switch (left) {
       case '-base':
         base = $rdf.uri.join(right, base)

@@ -5,7 +5,7 @@
 const docpart = require('./uri').docpart
 const Fetcher = require('./fetcher')
 const graph = require('./data-factory').graph
-const IndexedFormula = require('./indexed-formula')
+import IndexedFormula from './indexed-formula'
 const namedNode = require('./data-factory').namedNode
 const Namespace = require('./namespace')
 const Serializer = require('./serializer')
@@ -234,11 +234,14 @@ var UpdateManager = (function () {
   sparql.prototype._bnode_context_1 = function (x, source) {
     // Return a list of statements which indirectly identify a node
     //   Breadth-first
+    var self = this
     for (var depth = 0; depth < 3; depth++) { // Try simple first
       var con = this._bnode_context2(x, source, depth)
       if (con !== null) return con
     }
-    throw new Error('Unable to uniquely identify bnode: ' + x.toNT())
+    // If we can't guarantee unique with logic just send all info about node
+    return this.store.connectedStatements(x, source) // was:
+    // throw new Error('Unable to uniquely identify bnode: ' + x.toNT())
   }
 
   sparql.prototype._mentioned = function (x) {
@@ -849,7 +852,7 @@ var UpdateManager = (function () {
         }
       }
     } catch (e) {
-      callback(undefined, false, 'Exception in update: ' + e)
+      callback(undefined, false, 'Exception in update: ' + e + '\n' + $rdf.Util.stackString(e))
     }
   } // wnd update
 

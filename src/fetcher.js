@@ -1,3 +1,4 @@
+/* global $SolidTestEnvironment */
 /**
  *
  * Project: rdflib.js
@@ -36,6 +37,7 @@ const parseRDFaDOM = require('./rdfaparser').parseRDFaDOM
 const RDFParser = require('./rdfxmlparser')
 const Uri = require('./uri')
 const Util = require('./util')
+const serialize = require('./serialize')
 
 var Parsable = {
   'text/n3': true,
@@ -582,17 +584,17 @@ var Fetcher = function Fetcher (store, timeout, async) {
   // Returns promise of XHR
   //
   //  Writes back to the web what we have in the store for this uri
-  this.putBack = function (uri, options) {
+  this.putBack = function (uri, options = {}) {
     uri = uri.uri || uri // Accept object or string
-    var doc = $rdf.sym(uri).doc() // strip off #
-    options.data = $rdf.serialize(doc, this.store, doc.uri, options.contentType ||  'text/turtle')
+    var doc = new NamedNode(uri).doc() // strip off #
+    options.data = serialize(doc, this.store, doc.uri, options.contentType || 'text/turtle')
     return this.webOperation('PUT', uri, options)
   }
 
   // Returns promise of XHR
   //
-  this.webOperation = function (method, uri, options) {
-    uri = uri.uri || uri; options = options || {}
+  this.webOperation = function (method, uri, options = {}) {
+    uri = uri.uri || uri
     uri = this.proxyIfNecessary(uri)
     var fetcher = this
     return new Promise(function (resolve, reject) {
@@ -616,9 +618,7 @@ var Fetcher = function Fetcher (store, timeout, async) {
         }
       }
       xhr.open(method, uri, true)
-      if (options.contentType) {
-        xhr.setRequestHeader('Content-type', options.contentType)
-      }
+      xhr.setRequestHeader('Content-type', options.contentType || 'text/turtle')
       xhr.send(options.data ? options.data : undefined)
     })
   }
@@ -861,8 +861,8 @@ var Fetcher = function Fetcher (store, timeout, async) {
         var value = xhr.headers[h].trim()
         var h2 = h.toLowerCase()
         kb.add(response, ns.httph(h2), value, response)
-        if (h2 === 'content-type'){ // Convert to RDF type
-          kb.add(xhr.resource, ns.rdf('type'), $rdf.Util.mediaTypeClass(value), response)
+        if (h2 === 'content-type') { // Convert to RDF type
+          kb.add(xhr.resource, ns.rdf('type'), Util.mediaTypeClass(value), response)
         }
       }
     }
