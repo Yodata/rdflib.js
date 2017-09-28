@@ -10,8 +10,12 @@
     "name": "Tim BL",
     "email": "timbl@w3.org"
   },
-  "contributors": [{
-
+  "contributors": [
+    {
+      "name": "Ruben Verborgh",
+      "url": "https://github.com/RubenVerborgh"
+    },
+    {
       "name": "Dmitri Zagidulin",
       "url": "https://github.com/dmitrizagidulin/"
     },
